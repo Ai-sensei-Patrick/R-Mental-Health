@@ -1,0 +1,428 @@
+---
+title: "Mental Health Issue During Pandemic"
+author: "Patrick Chang"
+date: "DATA2002 | 13/09/2021"
+output:
+  
+  html_document:
+    code_folding: hide
+---
+
+```{r setup, include=FALSE}
+warning=FALSE
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Introduction ##
+
+The data used in this analysis came from students survey, those who are enrolled in DATA2X02 unit in Semester 2, 2021 at The University of Sydney. 211 from 754 students (28%) of DATA2X02 responded to the survey. 
+
+The questions in the survey are presented in various forms: 
+
+- multiple-choice questions
+
+Example: Which unit are you enrolled in? A. DATA2002 B. DATA 2902
+
+- short-answer questions
+
+Example: What is your favourite social media? 
+
+Stress and loneliness are two major feelings that people felt during this pandemic. Stress was already a main mental health concern even before the pandemic hit and stress could be affected by lots of factors. As "quarantine" introduced to suppress the widespread of COVID, this issue raise loneliness as another mental health problem to tackle along with stress and both of them could be correlated to each other. Due to this findings on loneliness and stress, I am interested to see factors that associated with loneliness and stress and do both stress and loneliness associated with each other for university students enrolled in DATA2X02. 
+
+I'm conducting 3 hypotheses test with regards with the mental health issue:
+
+- Whether student's living arrangement affects their loneliness level?
+
+- Whether student's loneliness levels have an association with student's stress level?
+
+- Whether student's enrolled in DATA2902 with higher workload have same mean stress level with student enrolled in DATA2002 with lower workload?
+
+Additionally, I'm required to test whether number of COVID tests of student follow a Poisson distributions.
+
+```{r warning=FALSE, message=FALSE}
+library(tidyverse)
+library(plotly)
+library(dplyr)
+library(gt)
+
+df = readr:: read_csv("/Users/patri/OneDrive/Desktop/DATA2002/Report/DATA2x02_survey_(Responses).csv") %>% 
+              janitor::clean_names() %>% 
+                    mutate_if(is.character,.funs = tolower)
+
+# Change Column Names
+c_names = c('timestamp','covid_tests','living_arrangements','height','which_day_is_the_event','currently_in_Australia','maths_ability','r_ability',
+                 'finding_data2002','university_year','frequency_camera_on','covid_vaccination_status','favourite_social_media','gender',
+                  'steak_preference','dominant_hand','stress_level','loneliness_level', 'non_spam_email',
+                  'signing_off_mark','average_entry_salary_for_ds','unit_enrolled','major','hour_spend_exercising')
+colnames(df) = c_names
+```
+
+
+## Discussion of the data ##
+
+The data collected from this survey is not random sample of DATA2X02 student as the survey is a voluntarily task on Ed discussion and there is a higher chance for students who more engaged to Ed discussion to do the survey compared to student who are less engaged. This result each student's data doesn't carries an equal probability to be selected from the data.
+
+This survey method cause biases such as selection bias and response bias:
+
+- Since the survey was available in short period time in early semester, this will lead to low representation of student who are busy at that time or student who work more hours at that period,  this is part of a selection bias. 
+
+- Student may be overestimate or underestimate their R coding ability or their mathematical ability, this is part of a response bias.
+
+- Student could be less willing to answer sensitive question such as "expectation of average entry salary of data scientist in Australia", as expected salary could be considered as a personal question. Some student may more likely to chose "easy" rather than "difficult" to make them look appealing among others for "how are you finding DATA2002 so far?", but as the survey is conducted anonymously this may not be a big issues.
+
+Question that need improvement:
+
+- "Expected average entry salary in Australian Dollars of a data scientist" 
+The salary need to be specified whether its in year/month/week/day/hour payment.
+
+- "Favorite social media" and "major that require DATA2002"
+Student should be asked only one of their major or their most favorite social media. Some people list more than one options for their favorites social media and , this make me hard to clean the data and reduce the validity of the data, as I'm taking the first major or the first social media from the options given.
+
+## Goodness of fit (Poisson) test ##
+
+**Hypotheses**
+
+We have null hypothesis as $H_0:$ Data came from poisson distribution ($X$~$Poisson(\hat{\lambda})$) and the alternative hypothesis as $H_1:$ Data do not come from a poisson distribution ($X$ is not ~$Poisson(\hat{\lambda})$)
+ 
+**Assumption**
+
+The observations are independent, so we assume student only take the survey once and $e_i=np_{i}\ge 5$.
+
+Looking at the expected cell counts on the table below, the assumption of $e_i=np_{i}\ge 5$ is violated.
+
+```{r}
+#Find the expected count in a poisson distribution
+obs = df %>% filter(!is.na(covid_tests)) %>% pull(covid_tests)
+sort_obs = obs %>% unique() %>% sort()
+obs_table = table(obs)
+eij = (sort_obs %>% dpois(lambda = mean(obs))*length(obs)) %>% t() %>% as.data.frame()
+colnames(eij) = sort_obs
+
+#create expected table in html
+table1 <- eij %>% round(2) %>% gt() %>% tab_header("Counts of covid tests") %>% tab_source_note("Expected counts based on poisson distribution")
+table1
+
+
+```
+
+We need to adjust some cell count by allocate cell counts of 10 test,8,7,6,5,4,3 number of COVID test into one cell count. This gave us 4 categories: 0 COVID test, 1 COVID test, 2 COVID tests, and 3 or more COVID tests.Thus $e_i=np_{i}\ge 5$ are fulfilled.
+
+```{r}
+#combine adjacent classes who  are <= 5
+combined_obs = obs_table[1:3] %>% append(sum(obs_table[4:10]))
+
+partial_prob = c(0,1,2) %>% dpois(lambda = mean(obs))
+prob_combined = partial_prob %>% append(1-sum(partial_prob))
+
+combined_eij = as.numeric(eij[1:3]) %>% append(as.numeric(sum(eij[4:10]))) 
+combined_eij_tab = combined_eij %>% t() %>% as.data.frame()
+col_labs = c('0','1','2','>=3')
+colnames(combined_eij_tab) = col_labs
+
+#create combined table in html
+table2 <- combined_eij_tab %>% round(2) %>% gt() %>% tab_header("Counts of covid tests") %>% tab_source_note("Expected counts based on poisson distribution after adjusting to fulfill the assumption")
+table2
+
+```
+
+
+**Test Statistic**
+
+Our t-statistic will be $\displaystyle{T=\sum\limits_{i=1}^k \frac{(Y_i - np_i)^2} {np_i}}$. Under $H_0$, $T \sim \chi_{k-q-1}^2$
+
+
+**Observed Test Statistic**
+
+$t_0 = 70.906$
+```{r}
+#test statistic
+t0 = sum((combined_obs - combined_eij)^2/combined_eij)
+```
+
+**P-value**
+
+$P(\chi^2_{2} \ge 70) = 4.440892 * 10^{-16}$, p-value close to zero.
+```{r}
+#p-value
+pvalue = 1- pchisq(t0,df = 4-1-1)
+```
+
+**Decision**
+
+Since p-values $< 0.05$, we reject null hypothesis and conclude that the COVID tests data do not come from a Poisson distribution.
+
+```{r}
+#Make a data frame for the graph
+exp_test = as.numeric(as.vector(eij))
+obs_test = as.numeric(as.vector(obs_table))
+n = as.numeric(names(eij))
+df_graph = data.frame(n,exp_test,obs_test) %>% arrange(n)
+
+#Make a histogram with poisson line
+ggplot(df_graph) + geom_bar(aes(x = n, y = obs_test, fill = "COVID data"), stat='identity') + geom_line(aes(x = n, y = exp_test),color = "darkblue") + labs(x = "Frequency of COVID test", y = "Count") + scale_fill_manual(name = "", values = c("COVID data" = "red", "Poisson" = "darkblue")) 
+```
+
+## Test 1 - Is there an association between living with other and loneliness level of DATA2X02 student? ##
+
+**Background story of the test**
+
+In the current lockdown, loneliness is a commonly increasing phenomenon and living arrangement is assumed to be the main contributor.This issue has been acknowledged the NSW government which then offers a 'singles social bubble' program during Sydney lockdown. With this program, people living by themselves are able to nominate one person allowed to visit them for social interaction.Therefore, I am interested in association between living arrangements and loneliness level of DATA2X02 student. 
+
+```{r}
+#living arrangement and loneliness level
+df_isolated1 = select(df,living_arrangements,loneliness_level) %>%
+  filter(!is.na(living_arrangements),!is.na(loneliness_level))
+
+#Group loneliness level to 1-3 as "not lonely", 4-7 as "moderate lonely" and 8-10 as "very lonely"
+df_modify1 = df_isolated1 %>% mutate(mod_loneliness = case_when(loneliness_level <= 3 & loneliness_level >= 0  ~ "Not lonely",
+                                                                loneliness_level >= 4 & loneliness_level <= 6 ~ "Moderate lonely",
+                                                                loneliness_level <= 10 & loneliness_level >= 7 ~ "Very lonely"),
+                                     lives_with_others = case_when(living_arrangements == "alone" ~ "no",
+                                                                    living_arrangements != "alone" ~ "yes")) %>% 
+                              mutate(mod_loneliness = factor(mod_loneliness,levels = c("Not lonely","Moderate lonely","Very lonely")),
+                                     lives_with_others = factor(lives_with_others,levels = c("yes","no")))
+
+#Create histogram plot
+ggplot(df_modify1,aes(x = mod_loneliness, fill = lives_with_others)) + geom_bar(position = "fill") + theme_grey(base_size = 18) + scale_fill_manual(name = "Live with other", values = c("yes" = "red", "no" = "darkblue")) + labs(x = "Loneliness level", y = "Proportion") + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
+
+```
+
+From the chart presented above, there appear an association between student whether they lives with other people with student stress level. Notably, more proportion of student living alone in the "Very lonely" subset compared to "Not lonely" and "Moderate lonely" subset. To further test this finding, I perform Chi squared test for independence with significance level $0.05$.
+
+**Data modification**
+
+I grouped "living arrangement" data into two groups living "alone" and living "with other", "alone" represent people who chose "alone" as their living arrangement and "with other" represent people whose living arrangement are "with parents","with one parent","share house","alternate between parents and partner","with partner","college or student accommodation","homestay" and "with sister". People whose living arrangement in "college or student accommodation" or "shared house" are grouped into "with other" as most people share common area such as living room, dining room or kitchen in "college or student accommodation" or "shared house" this allow them to socialize with people in that shared area. I grouped "loneliness level" into 3 groups; "not lonely", "moderate lonely" and "very lonely", as difference of loneliness level by 1 rate is insignificant. I chose "0-3" (not lonely), "4-6" (moderate lonely) and "7-10" (very lonely), As 0 and 10 considered as "extreme" value in this data, I set out "not lonely" and "very lonely" a larger range to cover more data, with this arrangement the distribution of the data will be more symmetric.
+
+**Hypotheses**
+
+$H_0$: $p_{j} = p_{i\bullet} p_{\bullet j},i = 1,2,..,r , j = 1,2,..,c$ vs $H_1$: Not all equalities hold
+
+**Assumption**
+
+Using Chi-square test of independent:
+$e_{ij} = y_{i\bullet} y_{\bullet j}/n \geq 5$
+
+Looking at the expected cell counts on the table below, the assumption of $e_{ij} = y_{i\bullet} y_{\bullet j}/n \geq 5$ is violated in two cells.
+
+```{r,warning=FALSE}
+c_mat = table(df_modify1$lives_with_others,df_modify1$mod_loneliness)
+# Expected contingency table
+eij = data.frame(chisq.test(c_mat, correct = FALSE)$expected %>%
+  round(2)) %>% tibble()
+eij$lives_with_other = c("Yes","No")
+
+# create expected table in html
+table3 <- eij %>% gt(rowname_col = "lives_with_other") %>%
+tab_stubhead(label = "Lives with other") %>% tab_header("Loneliness Level") %>% cols_label(Not.lonely = "Not lonely", Moderate.lonely = "Moderate lonely", Very.lonely = "Very lonely")
+table3
+```
+
+Based on the table above the assumption of Chi-square test is violated, I proceed using Monte-Carlo simulations instead. With Monte-Carlo simulations assumption of $e_{ij} = y_{i\bullet} y_{\bullet j}/n \geq 5$ is relaxed, since Monte-Carlo simulation doesn't have any assumption about the distribution of the data.
+
+**Test statistic**
+
+$\displaystyle{T=\sum\limits_{i=1}^{row} \sum\limits_{j=1}^{col} \frac{(y_{ij} - e_{ij})^2}{e_{ij} }}$.
+
+**Observed test statistic** 
+
+$t_0 = 3.567$
+```{r,message=FALSE}
+# There are two expected cell <= 5, we going to use Monte Carlo
+t0 = chisq.test(c_mat, simulate.p.value = TRUE, B = 1000000)$statistic
+```
+
+
+**P-value:**  
+
+$P(\chi^2 \ge 3.567) = 0.1759$, $B = 1000000$ represent 1000000 samples of possible combinations of expected table.
+```{r,message=FALSE}
+# There are two expected cell <= 5, we going to use Monte Carlo
+pval = chisq.test(c_mat, simulate.p.value = TRUE, B = 1000000)$p.value
+```
+
+**Decision**
+
+Since p-values $> 0.05$, I retain null hypothesis and conclude that there is no association between loneliness level and living with other people for DATA2X02 student.
+
+
+## Test 2 - Is there an association between loneliness level and stress level of DATA2X02 student? ##
+
+**Background story of the test**
+
+Other than loneliness, people in lockdown is also often stressed, There are many factors that affect the stress level with loneliness in current lockdown being a major contributor. Therefore, I'm interested in the association between loneliness and stress level of DATA2X02 student.
+
+```{r}
+#stress level and loneliness level
+df_isolated2 = select(df,stress_level,loneliness_level) %>%
+  filter(!is.na(stress_level),!is.na(loneliness_level))
+
+#Group loneliness level and group stress level to 1-3 as "not stress", 4-7 as "moderate stress" and 8-10 as "very stress"
+
+df_modify2 = df_isolated2 %>% mutate(mod_stress = case_when(stress_level <= 3 & stress_level >= 0  ~ "Not stress",
+                                                                stress_level >= 4 & stress_level <= 6 ~ "Moderate stress",
+                                                                stress_level <= 10 & stress_level >= 7 ~ "Very stress"),
+                                     mod_loneliness = case_when(loneliness_level <= 3 & loneliness_level >= 0  ~ "Not lonely",
+                                                                loneliness_level >= 4 & loneliness_level <= 6 ~ "Moderate lonely",
+                                                                loneliness_level <= 10 & loneliness_level >= 7 ~ "Very lonely")) %>%  
+  mutate(mod_loneliness = factor(mod_loneliness,levels = c("Not lonely","Moderate lonely","Very lonely")), mod_stress = factor(mod_stress,levels = c("Not stress","Moderate stress","Very stress")))
+
+#Create histogram plot
+ggplot(df_modify2,aes(x = mod_stress, fill = mod_loneliness)) + geom_bar(position = "fill") + theme_grey(base_size = 18) + scale_fill_manual(name = "Loneliness level", values = c("Very lonely" = "red", "Moderate lonely" = "yellow", "Not lonely" = "darkblue")) + labs(x = "Stress level", y = "Proportion") + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
+```
+
+From the graph presented above, there is appear an association between student loneliness level with student stress level. Notably, student who feel "Very lonely" appear to take higher proportion in "Very stress" subset compared to other subsets. To further test this finding, I perform Chi squared test for independence with significance level of $0.05$.
+
+**Data modification**
+
+I did same grouping for "loneliness level". I grouped "stress level" into 3 groups; "not stress", "moderate stress" and "very stress", as the difference of stress level by 1 rate is insignificant. I chose "0-3" (not stress), "4-6" (moderate stress) and "7-10" (very stress), As 0 and 10 considered as "extreme" value in this data, I set out "not lonely" and "very lonely" a larger range to cover more data, with this arrangement the distribution of the data will be more symmetric.
+
+
+**Hypotheses**
+
+$H_0$: $p_{j} = p_{i\bullet} p_{\bullet j},i = 1,2,..,r , j = 1,2,..,c$ vs $H_1$: Not all equalities hold
+
+**Assumption**
+
+Using Chi-square test of independent:
+$e_{ij} = y_{i\bullet} y_{\bullet j}/n \geq 5$
+
+Looking at the expected cell counts on the table below, the assumption of $e_{ij} = y_{i\bullet} y_{\bullet j}/n \geq 5$ is fulfilled.
+
+```{r}
+c_mat = table(df_modify2$mod_loneliness,df_modify2$mod_stress)
+# Expected contingency table
+tab = chisq.test(c_mat, correct = FALSE)$expected 
+eij = data.frame(tab %>% round(2)) %>% tibble()
+eij$loneliness_level = c("Not lonely","Moderate lonely","Very lonely")
+
+# create expected table in html
+table3 <- eij %>% gt(rowname_col = "loneliness_level") %>%
+tab_stubhead(label = "Loneliness Level") %>% tab_header("Stress Level") %>% tab_source_note("Expected counts based on Chi-squared distribution") %>% cols_label(Not.stress = "Not stress", Moderate.stress = "Moderate stress", Very.stress = "Very stress")
+table3
+```
+
+
+**Test statistic**
+
+$\displaystyle{T=\sum\limits_{i=1}^{row} \sum\limits_{j=1}^{col} \frac{(y_{ij} - e_{ij})^2}{e_{ij} }}$. Under $H_0$, $T \sim \chi^2_{(row-1)(col-1)}$ approx.
+
+**Observed test statistic**
+
+$t_0 = 9.3425$
+```{r,message=FALSE}
+# There is no expected cell <= 5, we going to chi-square test
+t0 = chisq.test(c_mat, correct = FALSE)$statistic
+```
+
+
+**P-value**
+
+$P(\chi^2_{4} \ge 9.3425) = 0.05309$
+```{r,message=FALSE}
+# There is no expected cell <= 5, we going to chi-square test
+pval = chisq.test(c_mat, correct = FALSE)$p.value
+```
+
+**Decision**
+
+Since p-values $> 0.05$, The p-value in this test are close enough to my significance level, this mean that the evidence of retaining the null hypothesis are quite weak. Overall, I retain null hypothesis and conclude that there is no association between loneliness level and stress level for DATA2X02 student.
+
+
+## Test 3 - Do student who enrolled in DATA2902 has higher stress level compared to student who enrolled in DATA2002? ##
+
+**Background story of the test**
+
+An individual's stress level is not only because of loneliness but can also arise from very demanding high workload. Therefore, I'm interested in investigating if the students enrolled in DATA2902 (advanced unit with higher workload) are more stressed than those enrolled in DATA2002 (Normal unit).
+
+```{r}
+#stress level and unit enrolled
+df_modify3 <- df %>% filter(!is.na(stress_level),!is.na(unit_enrolled))
+
+#count number of data in each subsets
+summary_tab <- df_modify3 %>% group_by(unit_enrolled) %>%
+  summarise(n = n(),
+            .groups = "drop")
+
+summary_tab %>% gt() %>% cols_label(unit_enrolled = "Unit Enrolled")
+
+#barplot
+ggplot(df_modify3, aes(x = stress_level)) +
+  geom_boxplot(aes(x = stress_level, y = 0), outlier.alpha = 0, width = 20) +
+  facet_grid(rows = vars(unit_enrolled)) + theme_grey(base_size = 18) + 
+  labs(x = "Stress Level (0-10)",y = "") 
+
+
+#qqplot
+ggplot(df_modify3, aes(sample = stress_level, color = unit_enrolled)) + stat_qq() + stat_qq_line() +
+          facet_grid(rows = vars(unit_enrolled)) + theme_grey(base_size = 18) + 
+          theme(legend.position = "none") + labs(x = "Theorethical", y = "Sample")
+```
+
+Based on the QQ-plot presented above, the upper tail of student who take "Normal" unit has a wider spread of data, but overall observation both QQ-Plot and Box plot show fairly normally distributed data. Central Limit theorem applied in this data as both subsets has large enough data ($>=30$), shown in the summary table. Therefore, I chose to use two sample T-test with $0.05$ significance level, since normality assumptions are met.
+
+**Hypotheses**
+
+$H_0: \mu_{Difficult} = \mu_{Easy}$ vs $H_1: \mu_{Easy} < \mu_{Difficult}$ since I expect people with higher workload experience higher stress level
+
+**Assumption**
+
+I assume two subsets are independent, assuming that each student take the survey only once. Both subsets have equal variance based on calculation, Advanced unit has variance of $4.61$ and Normal unit has variance of $4.67$. Normality assumption is met from my prior observation of QQ-plot and Box plot and Central Limit Theorem being applied.
+
+```{r,message=FALSE}
+normal <- df_modify3 %>% filter(unit_enrolled == "data2002") %>% select(stress_level) %>% pull()
+advanced <- df_modify3 %>% filter(unit_enrolled == "data2902 (advanced)") %>% select(stress_level) %>% pull()
+normal_var = var(normal)
+advanced_var = var(advanced)
+```
+
+**Test statistic**
+
+$\displaystyle{T=(\mu_{Normal}-\mu_{Advanced}})/\sqrt{S^2/n_{Advanced}+S^2/n_{Normal}}$
+
+**Observed test statistic**
+
+$t_0 = -2.175$
+```{r,message=FALSE}
+# t-statistic
+t0 = t.test(advanced, normal, alternative="greater", var.equal = TRUE)$statistic
+```
+
+**P-value**
+
+$P(t_{208} \ge |{-2.1755}|) = 0.9846$
+```{r,message=FALSE}
+#p-value
+pval = t.test(advanced, normal, alternative="greater", var.equal = TRUE)$p.value
+```
+
+**Decision**
+
+Since p-values $> 0.05$, The p-value in this test is close to 1 (0.9846) this mean there is strong evidence to retain null hypothesis. Overall I retain null hypothesis and conclude that the mean stress level of students who take DATA2902 are similar with students who take DATA2002.
+
+## Conclusion ##
+
+In conclusion, the findings revealed that there is no association between a student's living  arrangement and their loneliness level. This is because living together doesn't necessarily mean that there is adequate social interactions between household members. Another findings revealed that loneliness doesn't seem to associated with student's stress level. There is no difference in the mean stress level of students enrolled in both DATA2002 (normal unit) and DATA2902 (advanced unit).This is could be attributed to the fact that the advanced unit is not compulsory and it is purely their own discretion. It can be assumed that students who prefer to do DATA2902 are wary of the workload and do preliminary study to better prepare them for the course. In addition, since the survey is conducted in the start of a new uni semester, the students are less likely to feel burnout when the workload is not too busy (less assessment/exams).
+
+## References ##
+
+The Economic Times,Definition of 'Random Sampling'
+
+https://economictimes.indiatimes.com/definition/random-sampling
+
+Jovancic, N. (2021). 5 Types of Bias in Research and How to Make Your Surveys Bias-Free
+
+https://www.leadquizzes.com/blog/types-of-bias-in-research/
+
+Tarr, G (2021). DATA2002 Data Analytics: Learning from Data. University of Sydney, Sydney Australia.
+
+## Packages ##
+
+Hadley Wickham,Winston Chang,Lionel Henry,Kohske Takahashi,Claus Wilke,Kara Woo,Hiroaki Yutani.(2021). Create Elegant Data Visualisations Using the Grammar of Graphics
+
+https://cran.r-project.org/web/packages/ggplot2/ggplot2.pdf
+
+Richard Iannone, Joe Cheng, Barret Schloerke. gt 0.3.0.9000
+
+https://gt.rstudio.com/
+
+
